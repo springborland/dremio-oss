@@ -119,7 +119,7 @@ public class TestTpchExplain extends PlanTestBase {
   public void tpch12() throws Exception{
     checkPlan("queries/tpch/12.sql",
         new String[] {
-            "00-05.*HashJoin", "00-07.*Project", "00-09.*Scan.*orders.parquet", "00-10.*Filter", "00-11.*Scan.*lineitem.parquet" },
+            "HashJoin", "Project", "Scan.*orders.parquet", "Filter", "Scan.*lineitem.parquet" },
         new String[] {
             "HashToRandomExchange"
         });
@@ -231,7 +231,6 @@ public class TestTpchExplain extends PlanTestBase {
   }
 
   @Test
-  @Ignore("cartesian")
   public void tpch21() throws Exception{
     doExplain("queries/tpch/21.sql");
   }

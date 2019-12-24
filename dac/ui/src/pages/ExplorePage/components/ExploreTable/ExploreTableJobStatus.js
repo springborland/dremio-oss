@@ -17,14 +17,16 @@ import { Component } from 'react';
 import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 import { withRouter } from 'react-router';
+import { injectIntl } from 'react-intl';
 
 import DropdownMenu from '@app/components/Menus/DropdownMenu';
+import HoverHelp from '@app/components/HoverHelp';
 import RealTimeTimer from '@app/components/RealTimeTimer';
 import { JobStatusMenu } from '@app/components/Menus/ExplorePage/JobStatusMenu';
 import SampleDataMessage from '@app/pages/ExplorePage/components/SampleDataMessage';
 import ExploreTableJobStatusSpinner from '@app/pages/ExplorePage/components/ExploreTable/ExploreTableJobStatusSpinner';
 import jobsUtils from '@app/utils/jobsUtils';
-import {getJobProgress, getImmutableTable, getExploreJobId} from '@app/selectors/explore';
+import {getJobProgress, getImmutableTable, getExploreJobId, getJobOutputRecords} from '@app/selectors/explore';
 import { cancelJobAndShowNotification } from '@app/actions/jobs/jobs';
 
 
@@ -48,6 +50,7 @@ export const isWorking = (status) => {
     JOB_STATUS.cancellationRequested].includes(status);
 };
 
+@injectIntl
 export class ExploreTableJobStatus extends Component {
   static propTypes = {
     approximate: PropTypes.bool,
@@ -55,7 +58,9 @@ export class ExploreTableJobStatus extends Component {
     jobProgress: PropTypes.object,
     jobId: PropTypes.string,
     haveRows: PropTypes.bool,
+    outputRecords: PropTypes.number,
     cancelJob: PropTypes.func,
+    intl: PropTypes.object.isRequired,
     //withRouter props
     location: PropTypes.object.isRequired
   };
@@ -105,6 +110,19 @@ export class ExploreTableJobStatus extends Component {
     return null;
   };
 
+  renderHoverHelp = (isRun) => {
+    const {intl} = this.props;
+    const helpContent = isRun ?
+      intl.formatMessage({ id: 'Explore.run.warning' }) :
+      intl.formatMessage({ id: 'Explore.preview.warning' });
+    return <HoverHelp
+      content={helpContent}
+      placement='bottom-start'
+      tooltipStyle={styles.helpTooltip}
+      tooltipInnerStyle={styles.helpInnerTooltip}
+    />;
+  };
+
   getCancellable = jobStatus => {
     return jobStatus === JOB_STATUS.running
       || jobStatus === JOB_STATUS.starting
@@ -112,21 +130,21 @@ export class ExploreTableJobStatus extends Component {
   };
 
   render() {
-    const { jobProgress, jobId } = this.props;
+    const { jobProgress, jobId, outputRecords } = this.props;
     if (!jobProgress) {
       return this.renderPreviewWarning();
     }
 
     const jobTypeLabel = jobProgress.isRun ? la('Run') : la('Preview');
-    const isCompleteWithRecords = false; //TODO: recordCount for completed job: jobProgress.status === JOB_STATUS.completed && jobProgress.recordCount;
+    const isCompleteWithRecords = jobProgress.status === JOB_STATUS.completed && outputRecords;
     const jobStatusLabel = (isCompleteWithRecords) ? la('Records: ') : la('Status: ');
-    const jobStatusName = (isCompleteWithRecords) ? '' + jobProgress.recordCount : this.jobStatusNames[jobProgress.status];
+    const jobStatusName = (isCompleteWithRecords) ? outputRecords.toLocaleString() : this.jobStatusNames[jobProgress.status];
     const isJobCancellable = this.getCancellable(jobProgress.status);
 
     return (
       <div style={styles.wrapper}>
         <span style={styles.label}>{la('Job: ')}</span>
-        <span style={styles.value}>{jobTypeLabel}</span>
+        <span style={styles.value}>{jobTypeLabel}{this.renderHoverHelp(jobProgress.isRun)}</span>
         <span style={styles.divider}> | </span>
         <span style={styles.label}>{jobStatusLabel}</span>
         <span style={styles.value}>
@@ -156,6 +174,7 @@ export class ExploreTableJobStatus extends Component {
 function mapStateToProps(state, props) {
   const jobProgress = getJobProgress(state);
   const jobId = getExploreJobId(state);
+  const outputRecords = getJobOutputRecords(state);
   const {approximate, location = {}} = props;
 
   let haveRows = false;
@@ -170,7 +189,8 @@ function mapStateToProps(state, props) {
   return {
     jobProgress,
     jobId,
-    haveRows
+    haveRows,
+    outputRecords
   };
 }
 
@@ -203,5 +223,14 @@ const styles = {
   },
   text: {
     marginRight: 6
+  },
+  helpTooltip: {
+    zIndex: 10001
+  },
+  helpInnerTooltip: {
+    width: 240
+  },
+  menuText: {
+    marginRight: 0
   }
 };

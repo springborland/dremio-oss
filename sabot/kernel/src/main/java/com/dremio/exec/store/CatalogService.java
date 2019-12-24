@@ -23,12 +23,11 @@ import javax.annotation.concurrent.ThreadSafe;
 import org.apache.calcite.tools.RuleSet;
 
 import com.dremio.exec.catalog.Catalog;
+import com.dremio.exec.catalog.MetadataRequestOptions;
 import com.dremio.exec.catalog.StoragePluginId;
 import com.dremio.exec.ops.OptimizerRulesContext;
 import com.dremio.exec.planner.PlannerPhase;
 import com.dremio.service.Service;
-import com.dremio.service.namespace.NamespaceException;
-import com.dremio.service.namespace.NamespaceKey;
 import com.dremio.service.namespace.SourceState;
 import com.dremio.service.namespace.source.proto.MetadataPolicy;
 import com.dremio.service.namespace.source.proto.SourceConfig;
@@ -148,41 +147,16 @@ public interface CatalogService extends AutoCloseable, Service {
    */
   RuleSet getStorageRules(OptimizerRulesContext context, PlannerPhase phase);
 
-  enum UpdateType {
-    NAMES, FULL, NONE
-  }
-
   /**
-   * Refresh the metadata cached for a given source. If no metadata policy is provided, the
-   * currently active source one is used.
+   * Get a new {@link Catalog} contextualized to the {@link SchemaConfig} provided via the given
+   * {@link MetadataRequestOptions metadata request options}, and constrained by the other request options.
+   * <p>
+   * {@link Catalog Catalogs} are used to interact with datasets within the context of a particular session.
    *
-   * @param source         The name of the source to update.
-   * @param metadataPolicy The metadata policy to use when updating. A null value tells the update to use the
-   *                       currently active metadata policy associated with that source.
-   * @param updateType     The type of update perform.
-   * @return Whether or not any changes to metadata occurred as part of the update.
-   * @throws NamespaceException
+   * @param requestOptions metadata request options
+   * @return catalog with the given constraints
    */
-  boolean refreshSource(NamespaceKey source, MetadataPolicy metadataPolicy, UpdateType updateType) throws NamespaceException;
-
-  /**
-   * Get a Catalog contextualized to the provided SchemaConfig. Catalogs are used to interact with
-   * datasets within the context a particular session.
-   *
-   * @param schemaConfig schema config
-   * @return catalog
-   */
-  Catalog getCatalog(SchemaConfig schemaConfig);
-
-  /**
-   * Get a new {@link Catalog catalog} that only considers metadata valid if it is newer than the
-   * provided maxRequestTime.
-   *
-   * @param schemaConfig   schema config
-   * @param maxRequestTime max request time
-   * @return catalog with given constraints
-   */
-  Catalog getCatalog(SchemaConfig schemaConfig, long maxRequestTime);
+  Catalog getCatalog(MetadataRequestOptions requestOptions);
 
   /**
    * Determines if a SourceConfig changes metadata impacting properties compared to the existing SourceConfig.

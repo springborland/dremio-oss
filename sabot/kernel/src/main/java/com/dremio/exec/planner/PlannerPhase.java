@@ -38,6 +38,7 @@ import org.apache.calcite.rel.rules.AggregateExpandDistinctAggregatesRule;
 import org.apache.calcite.rel.rules.AggregateReduceFunctionsRule;
 import org.apache.calcite.rel.rules.AggregateRemoveRule;
 import org.apache.calcite.rel.rules.FilterAggregateTransposeRule;
+import org.apache.calcite.rel.rules.FilterCorrelateRule;
 import org.apache.calcite.rel.rules.FilterJoinRule;
 import org.apache.calcite.rel.rules.FilterMultiJoinMergeRule;
 import org.apache.calcite.rel.rules.FilterSetOpTransposeRule;
@@ -107,6 +108,8 @@ import com.dremio.exec.planner.logical.UnionAllRule;
 import com.dremio.exec.planner.logical.ValuesRule;
 import com.dremio.exec.planner.logical.WindowRule;
 import com.dremio.exec.planner.physical.EmptyPrule;
+import com.dremio.exec.planner.physical.FilterNLJMergeRule;
+import com.dremio.exec.planner.physical.FilterProjectNLJRule;
 import com.dremio.exec.planner.physical.FilterPrule;
 import com.dremio.exec.planner.physical.FlattenPrule;
 import com.dremio.exec.planner.physical.HashAggPrule;
@@ -116,12 +119,14 @@ import com.dremio.exec.planner.physical.LimitUnionExchangeTransposeRule;
 import com.dremio.exec.planner.physical.MergeJoinPrule;
 import com.dremio.exec.planner.physical.NestedLoopJoinPrule;
 import com.dremio.exec.planner.physical.PlannerSettings;
+import com.dremio.exec.planner.physical.ProjectNLJMergeRule;
 import com.dremio.exec.planner.physical.ProjectPrule;
 import com.dremio.exec.planner.physical.PushLimitToPruneableScan;
 import com.dremio.exec.planner.physical.PushLimitToTopN;
 import com.dremio.exec.planner.physical.SamplePrule;
 import com.dremio.exec.planner.physical.SampleToLimitPrule;
 import com.dremio.exec.planner.physical.ScreenPrule;
+import com.dremio.exec.planner.physical.SimplifyNLJConditionRule;
 import com.dremio.exec.planner.physical.SortConvertPrule;
 import com.dremio.exec.planner.physical.SortPrule;
 import com.dremio.exec.planner.physical.StreamAggPrule;
@@ -213,6 +218,10 @@ public enum PlannerPhase {
         // This can't run here because even though it is heuristic, it causes acceleration matches to fail.
         // PushProjectIntoScanRule.INSTANCE
       );
+
+      if (context.getPlannerSettings().isRelPlanningEnabled()) {
+        b.add(LOGICAL_FILTER_CORRELATE_RULE);
+      }
 
       if (context.getPlannerSettings().isTransitiveFilterPushdownEnabled()) {
         b.add(CompositeFilterJoinRule.NO_TOP_FILTER,
@@ -354,6 +363,22 @@ public enum PlannerPhase {
     public RuleSet getRules(OptimizerRulesContext context) {
       return PlannerPhase.getPhysicalRules(context);
     }
+  },
+
+  PHYSICAL_HEP("Physical Heuristic Planning") {
+    @Override
+    public RuleSet getRules(OptimizerRulesContext context) {
+      ImmutableList.Builder<RelOptRule> builder = ImmutableList.builder();
+      builder.add(FilterProjectNLJRule.INSTANCE);
+      builder.add(FilterNLJMergeRule.INSTANCE);
+      if (context.getPlannerSettings().options.getOption(PlannerSettings.ENABlE_PROJCT_NLJ_MERGE)) {
+        builder.add(ProjectNLJMergeRule.INSTANCE);
+      }
+      if (context.getPlannerSettings().options.getOption(PlannerSettings.NLJ_PUSHDOWN)) {
+        builder.add(SimplifyNLJConditionRule.INSTANCE);
+      }
+      return RuleSets.ofList(builder.build());
+    }
   };
 
   private static final Logger logger = LoggerFactory.getLogger(PlannerPhase.class);
@@ -440,6 +465,8 @@ public enum PlannerPhase {
       LogicalJoin.class,
       ExprCondition.TRUE,
       DremioRelFactories.CALCITE_LOGICAL_BUILDER);
+
+  public static final RelOptRule LOGICAL_FILTER_CORRELATE_RULE = new FilterCorrelateRule(DremioRelFactories.CALCITE_LOGICAL_BUILDER);
 
   private static final class LogicalFilterJoinRule extends FilterJoinRule {
     private LogicalFilterJoinRule() {
@@ -577,6 +604,9 @@ public enum PlannerPhase {
     final ImmutableList.Builder<RelOptRule> userConfigurableRules = ImmutableList.builder();
 
     userConfigurableRules.add(ConvertCountDistinctToHll.INSTANCE);
+    if (ps.options.getOption(PlannerSettings.REDUCE_ALGEBRAIC_EXPRESSIONS)) {
+      userConfigurableRules.add(ReduceTrigFunctionsRule.INSTANCE);
+    }
 
     if (ps.isConstantFoldingEnabled()) {
       // TODO - DRILL-2218, DX-2319
